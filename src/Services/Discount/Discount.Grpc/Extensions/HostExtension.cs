@@ -4,11 +4,11 @@ namespace Discount.Grpc.Extensions
 {
     public static class HostExtension
     {
-        public static IHost MigrateDatabase<TContext>(this IHost host, int? retry = 0)
+        public static WebApplication MigrateDatabase<TContext>(this WebApplication webApp, int? retry = 0)
         {
             int retryForAvailability = retry.Value;
 
-            using var scope = host.Services.CreateScope();
+            using var scope = webApp.Services.CreateScope();
             var services = scope.ServiceProvider;
             var config = services.GetRequiredService<IConfiguration>();
             var logger = services.GetRequiredService<ILogger<TContext>>();
@@ -46,10 +46,10 @@ namespace Discount.Grpc.Extensions
                 {
                     retryForAvailability++;
                     Thread.Sleep(2000);
-                    MigrateDatabase<TContext>(host, retryForAvailability);
+                    MigrateDatabase<TContext>(webApp, retryForAvailability);
                 }
             }
-            return host;
+            return webApp;
         }
     }
 }

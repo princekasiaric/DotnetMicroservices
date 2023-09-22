@@ -4,8 +4,7 @@ using Discount.API.Repositories;
 var builder = WebApplication.CreateBuilder(args);
 
 //IHost for database automigration
-var host = Host.CreateDefaultBuilder(args).Build();
-host.MigrateDatabase<Program>();
+Host.CreateDefaultBuilder(args).Build().MigrateDatabase<Program>();
 
 // Add services to the container.
 builder.Services.AddScoped<IDiscountRepository, DiscountRepository>();

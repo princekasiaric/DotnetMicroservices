@@ -5,10 +5,6 @@ using Discount.Grpc.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-//IHost for database automigration
-var host = Host.CreateDefaultBuilder(args).Build();
-host.MigrateDatabase<Program>();
-
 // Additional configuration is required to successfully run gRPC on macOS.
 // For instructions on how to configure Kestrel and gRPC clients on macOS, visit https://go.microsoft.com/fwlink/?linkid=2099682
 
@@ -17,7 +13,7 @@ builder.Services.AddScoped<IDiscountRepository, DiscountRepository>();
 builder.Services.AddAutoMapper(typeof(DiscountProfile).Assembly);
 builder.Services.AddGrpc();
 
-var app = builder.Build();
+var app = builder.Build().MigrateDatabase<Program>();
 
 // Configure the HTTP request pipeline.
 app.MapGrpcService<DiscountService>();
