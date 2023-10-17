@@ -1,10 +1,11 @@
+using Common.Logging;
 using Discount.API.Extensions;
 using Discount.API.Repositories;
+using HealthChecks.UI.Client;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
-
-//IHost for database automigration
-Host.CreateDefaultBuilder(args).Build().MigrateDatabase<Program>();
 
 // Add services to the container.
 builder.Services.AddScoped<IDiscountRepository, DiscountRepository>();
@@ -13,7 +14,12 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var app = builder.Build();
+builder.Services.AddHealthChecks()
+    .AddNpgSql(builder.Configuration["DatabaseSettings:ConnectionString"]);
+
+builder.Host.UseSerilog(SeriLogger.Configure);
+
+var app = builder.Build().MigrateDatabase<Program>();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -25,5 +31,6 @@ if (app.Environment.IsDevelopment())
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/hc", new HealthCheckOptions() { Predicate = (check) => true, ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse });
 
 app.Run();

@@ -1,14 +1,13 @@
 ﻿using Npgsql;
+using Polly;
 
 namespace Discount.API.Extensions
 {
     public static class HostExtension
     {
-        public static IHost MigrateDatabase<TContext>(this IHost host, int? retry = 0)
+        public static WebApplication MigrateDatabase<TContext>(this WebApplication webApp)
         {
-            int retryForAvailability = retry.Value;
-
-            using var scope = host.Services.CreateScope();
+            using var scope = webApp.Services.CreateScope();
             var services = scope.ServiceProvider;
             var config = services.GetRequiredService<IConfiguration>();
             var logger = services.GetRequiredService<ILogger<TContext>>();
@@ -17,39 +16,54 @@ namespace Discount.API.Extensions
             {
                 logger.LogInformation("Migrating postgresql database...");
 
-                using var conn = new NpgsqlConnection(config.GetValue<string>("DatabaseSettings:ConnectionString"));
-                conn.Open();
+                var retry = Policy.Handle<NpgsqlException>()
+                        .WaitAndRetry(
+                            retryCount: 5,
+                            sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)), // 2,4,8,16,32 sc
+                            onRetry: (exception, retryCount, context) =>
+                            {
+                                logger.LogError($"Retry {retryCount} of {context.PolicyKey} at {context.OperationKey}, due to: {exception}.");
+                            });
 
-                using var cmd = new NpgsqlCommand { Connection= conn };
-                cmd.CommandText = "DROP TABLE IF EXISTS Coupon";
-                cmd.ExecuteNonQuery();
-
-                cmd.CommandText = @"create table Coupon(ID serial primary key not null,
-                                                        ProductName varchar(24) not null,
-                                                        Description text,
-                                                        Amount int)";
-                cmd.ExecuteNonQuery();
-
-                cmd.CommandText = "insert into Coupon (ProductName, Description, Amount) values ('IPhone X', 'IPhone Discount', 150);";
-                cmd.ExecuteNonQuery();
-
-                cmd.CommandText = "insert into Coupon (ProductName, Description, Amount) values ('Samsung 10', 'Samsung Discount', 100);";
-                cmd.ExecuteNonQuery();
+                //if the postgresql server container is not created on run docker compose this
+                //migration can't fail for network related exception. The retry options for database operations
+                //apply to transient exceptions                    
+                retry.Execute(() => ExecuteMigrations(config));
 
                 logger.LogInformation("Migrated postgresql database.");
             }
             catch (NpgsqlException ex)
             {
                 logger.LogError(ex, "An error occurred while migrating the postgresql database");
-
-                if (retryForAvailability < 50)
-                {
-                    retryForAvailability++;
-                    Thread.Sleep(2000);
-                    MigrateDatabase<TContext>(host, retryForAvailability);
-                }
             }
-            return host;
+            return webApp;
+        }
+
+        private static void ExecuteMigrations(IConfiguration configuration)
+        {
+            using var connection = new NpgsqlConnection(configuration.GetValue<string>("DatabaseSettings:ConnectionString"));
+            connection.Open();
+
+            using var command = new NpgsqlCommand
+            {
+                Connection = connection
+            };
+
+            command.CommandText = "DROP TABLE IF EXISTS Coupon";
+            command.ExecuteNonQuery();
+
+            command.CommandText = @"CREATE TABLE Coupon(Id SERIAL PRIMARY KEY, 
+                                                                ProductName VARCHAR(24) NOT NULL,
+                                                                Description TEXT,
+                                                                Amount INT)";
+            command.ExecuteNonQuery();
+
+
+            command.CommandText = "INSERT INTO Coupon(ProductName, Description, Amount) VALUES('IPhone X', 'IPhone Discount', 150);";
+            command.ExecuteNonQuery();
+
+            command.CommandText = "INSERT INTO Coupon(ProductName, Description, Amount) VALUES('Samsung 10', 'Samsung Discount', 100);";
+            command.ExecuteNonQuery();
         }
     }
 }
